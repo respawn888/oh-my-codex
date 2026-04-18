@@ -861,8 +861,8 @@ export function createTeamSession(
         workerCliPlan[i - 1],
         startup.initialPrompt,
       );
-      // First split creates the right side from leader. Remaining splits stack on the right.
-      const splitDirection = i === 1 ? '-h' : '-v';
+      // First split creates the bottom area from leader. Remaining splits stack across the bottom.
+      const splitDirection = i === 1 ? '-v' : '-h';
       const splitTarget = i === 1 ? leaderPaneId : (rightStackRootPaneId ?? leaderPaneId);
       const split = runTmux([
         'split-window',
@@ -889,22 +889,22 @@ export function createTeamSession(
       if (i === 1) rightStackRootPaneId = paneId;
     }
 
-    // Keep leader as full left/main pane; workers stay stacked on the right.
-    runTmux(['select-layout', '-t', teamTarget, 'main-vertical']);
+    // Keep leader as the full top/main pane; workers stay stacked along the bottom.
+    runTmux(['select-layout', '-t', teamTarget, 'main-horizontal']);
 
-    // Force leader pane to use half the window width.
-    const windowWidthResult = runTmux(['display-message', '-p', '-t', teamTarget, '#{window_width}']);
-    if (windowWidthResult.ok) {
-      const width = Number.parseInt(windowWidthResult.stdout.split('\n')[0]?.trim() || '', 10);
-      if (Number.isFinite(width) && width >= 40) {
-        const half = String(Math.floor(width / 2));
-        runTmux(['set-window-option', '-t', teamTarget, 'main-pane-width', half]);
-        runTmux(['select-layout', '-t', teamTarget, 'main-vertical']);
+    // Force leader pane to use roughly the top half of the window height.
+    const windowHeightResult = runTmux(['display-message', '-p', '-t', teamTarget, '#{window_height}']);
+    if (windowHeightResult.ok) {
+      const height = Number.parseInt(windowHeightResult.stdout.split('\n')[0]?.trim() || '', 10);
+      if (Number.isFinite(height) && height >= 20) {
+        const half = String(Math.floor(height / 2));
+        runTmux(['set-window-option', '-t', teamTarget, 'main-pane-height', half]);
+        runTmux(['select-layout', '-t', teamTarget, 'main-horizontal']);
       }
     }
 
     // Re-create a single team HUD as a full-width bottom strip spanning both
-    // leader + worker columns. Keep this after layout sizing so the main
+    // leader + worker rows. Keep this after layout sizing so the main
     // leader/worker topology stays readable and the HUD remains compact.
     // Capture the HUD pane ID so it can be tracked and excluded from worker cleanup.
     let hudPaneId: string | null = null;

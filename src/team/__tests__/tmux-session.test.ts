@@ -75,6 +75,18 @@ function withMockedExistsSync<T>(mock: typeof fs.existsSync, fn: () => T): T {
   }
 }
 
+function withMockedReadFileSync<T>(mock: typeof fs.readFileSync, fn: () => T): T {
+  const original = fs.readFileSync;
+  fs.readFileSync = mock;
+  syncBuiltinESMExports();
+  try {
+    return fn();
+  } finally {
+    fs.readFileSync = original;
+    syncBuiltinESMExports();
+  }
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1846,8 +1858,8 @@ case "\${1:-}" in
     ;;
   display-message)
     case "$*" in
-      *"#{window_width}"*)
-        echo "120"
+      *"#{window_height}"*)
+        echo "60"
         ;;
       *)
         echo "leader:0 %1"
@@ -1896,17 +1908,27 @@ esac
           delete process.env.WSL_INTEROP;
           Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 
-          const session = createTeamSession('Windows Team', 1, cwd);
-          assert.equal(session.hudPaneId, '%3');
-          assert.equal(session.resizeHookName, null);
-          assert.equal(session.resizeHookTarget, null);
+          const originalReadFileSync = fs.readFileSync;
+          await withMockedReadFileSync(((path, ...args) => {
+            if (path === '/proc/version') {
+              return 'Linux version 6.6.0 generic';
+            }
+            return originalReadFileSync(path, ...args);
+          }) as typeof fs.readFileSync, async () => {
+            const session = createTeamSession('Windows Team', 1, cwd);
+            assert.equal(session.hudPaneId, '%3');
+            assert.equal(session.resizeHookName, null);
+            assert.equal(session.resizeHookTarget, null);
 
-          const tmuxLog = await readFile(logPath, 'utf-8');
-          assert.match(tmuxLog, new RegExp(`resize-pane -t %3 -y ${HUD_TMUX_TEAM_HEIGHT_LINES}`));
-          assert.doesNotMatch(tmuxLog, /set-hook -t leader:0 client-resized\[\d+\]/);
-          assert.doesNotMatch(tmuxLog, /set-hook -t leader:0 client-attached\[\d+\]/);
-          assert.doesNotMatch(tmuxLog, /run-shell -b sleep \d+; tmux resize-pane -t %3 -y \d+ >/);
-          assert.doesNotMatch(tmuxLog, /run-shell tmux resize-pane -t %3 -y \d+ >/);
+            const tmuxLog = await readFile(logPath, 'utf-8');
+            assert.match(tmuxLog, /select-layout -t leader:0 main-horizontal/);
+            assert.match(tmuxLog, /set-window-option -t leader:0 main-pane-height 30/);
+            assert.match(tmuxLog, new RegExp(`resize-pane -t %3 -y ${HUD_TMUX_TEAM_HEIGHT_LINES}`));
+            assert.doesNotMatch(tmuxLog, /set-hook -t leader:0 client-resized\[\d+\]/);
+            assert.doesNotMatch(tmuxLog, /set-hook -t leader:0 client-attached\[\d+\]/);
+            assert.doesNotMatch(tmuxLog, /run-shell -b sleep \d+; tmux resize-pane -t %3 -y \d+ >/);
+            assert.doesNotMatch(tmuxLog, /run-shell tmux resize-pane -t %3 -y \d+ >/);
+          });
         },
       );
     } finally {
@@ -2167,17 +2189,33 @@ describe('isNativeWindows', () => {
     const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
     const prevDistro = process.env.WSL_DISTRO_NAME;
     const prevInterop = process.env.WSL_INTEROP;
+    const prevMsystem = process.env.MSYSTEM;
+    const prevOstype = process.env.OSTYPE;
     delete process.env.WSL_DISTRO_NAME;
     delete process.env.WSL_INTEROP;
+    delete process.env.MSYSTEM;
+    delete process.env.OSTYPE;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     try {
-      assert.equal(isNativeWindows(), true);
+      const originalReadFileSync = fs.readFileSync;
+      withMockedReadFileSync(((path, ...args) => {
+        if (path === '/proc/version') {
+          return 'Linux version 6.6.0 generic';
+        }
+        return originalReadFileSync(path, ...args);
+      }) as typeof fs.readFileSync, () => {
+        assert.equal(isNativeWindows(), true);
+      });
     } finally {
       if (origPlatform) Object.defineProperty(process, 'platform', origPlatform);
       if (typeof prevDistro === 'string') process.env.WSL_DISTRO_NAME = prevDistro;
       else delete process.env.WSL_DISTRO_NAME;
       if (typeof prevInterop === 'string') process.env.WSL_INTEROP = prevInterop;
       else delete process.env.WSL_INTEROP;
+      if (typeof prevMsystem === 'string') process.env.MSYSTEM = prevMsystem;
+      else delete process.env.MSYSTEM;
+      if (typeof prevOstype === 'string') process.env.OSTYPE = prevOstype;
+      else delete process.env.OSTYPE;
     }
   });
 
